@@ -1,0 +1,458 @@
+import tkinter as tk
+import tkinter.ttk as ttk
+from tkinter import messagebox
+from datetime import datetime, timedelta
+
+import matplotlib
+matplotlib.use("TkAgg")
+matplotlib.rcParams['savefig.pad_inches'] = 0
+matplotlib.rcParams['axes.facecolor'] = 'white'
+matplotlib.rcParams['figure.facecolor'] = '#f0f0f0'
+
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
+from mpldatacursor import datacursor
+
+import numpy as np
+
+import yfinance as yf
+
+import bs4
+
+import requests
+
+import re
+
+
+class ScrollableFrame(tk.Frame):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        canvas = tk.Canvas(self)
+        scrollbar = ttk.Scrollbar(self, orient=tk.VERTICAL, command=canvas.yview)
+        self.scrollable_frame = tk.Frame(canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor=tk.NW)
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+
+class Main:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.geometry("1280x720")
+        
+        self.ticker_frame = tk.Frame(self.root, width=1280-15, height=45, highlightbackground="#dcdcdc", highlightthickness=1)
+        self.ticker_frame.place(x=5,y=5)
+        self.ticker_frame.grid_propagate(False)
+
+        self.ticker_ui()
+        self.setup_frames()
+
+        self.root.mainloop()
+
+    def setup_frames(self):
+        self.graph_frame_tl = ttk.LabelFrame(self.root, text="Top Left Graph", width=(1280/2)-15+100, height=(720/2)-15-50+120)
+        self.graph_frame_tl.place(x=5,y=55)
+        self.graph_frame_tl.pack_propagate(False)
+
+        self.graph_frame_tr = ttk.Frame(self.root, width=(1280/2)-15-100, height=(720/2)-15-50-70)
+        self.graph_frame_tr.place(x=180,y=720/2+5+115)
+        self.graph_frame_tr.pack_propagate(False)
+
+        self.graph_frame_bl = ttk.LabelFrame(self.root, text="Bottom Left Graph", width=150, height=150)#, width=(1280/2)-15-150, height=(720/2)-15-150)
+        self.graph_frame_bl.place(x=5,y=720/2+5+120)
+        self.graph_frame_bl.pack_propagate(False)
+
+        self.data_br = ttk.LabelFrame(self.root, text="Bottom Right Data", width=(1280/2)-15-100, height=720-45-15)
+        self.data_br.place(x=1280/2+100,y=55)
+        self.data_br.grid_propagate(False)
+        self.data_br.pack_propagate(False)
+
+        self.tl_graph()
+        self.tr_graph()
+        self.bl_graph()
+        self.data_br_ui()
+
+    def ticker_ui(self):
+        tk.Label(self.ticker_frame, text="Ticker:").grid(row=0, column=0, pady=10, padx=(1280/2-150, 10))
+        self.ticker_entry_var = tk.StringVar()
+        self.ticker_entry = ttk.Entry(self.ticker_frame, textvariable=self.ticker_entry_var)
+        self.ticker_entry.grid(row=0, column=1)
+
+        self.stock_info = {}
+
+        ttk.Button(self.ticker_frame, text="Fetch Info", command=lambda: self.show_stock_info()).grid(row=0,column=2, padx=5)
+
+        self.ticker_label = ttk.Label(self.ticker_frame, text="")
+        self.ticker_label.grid(row=0, column=3, padx=5)
+
+    def tl_graph(self):        
+        fig = Figure(figsize=(10,6), dpi=60)
+        subplot_1 = fig.add_subplot()
+        
+        fig.tight_layout()
+
+        fig.autofmt_xdate(rotation=60)
+        subplot_1.tick_params(axis="x", size=12)
+        subplot_1.yaxis.set_major_formatter('${x:1.0f}')
+
+        x = [1,2,3,4,5,6,7,8]
+        y = [2,4,8,16,32,64,128,256]
+
+        subplot_1.plot(x, y)
+
+        x = self.stock_hist.index
+        y = self.stock_hist["Close"]
+
+        print(x[0])
+        print()
+
+        plt.plot(x, y)
+        plt.axis([datetime(2024, 2, 3), datetime(2024, 2, 10), 400, 440])
+
+        up_df = self.stock_hist[self.stock_hist.Close > self.stock_hist.Open].copy()
+        down_df = self.stock_hist[self.stock_hist.Close < self.stock_hist.Open].copy()
+            
+
+        subplot_1.vlines(self.stock_hist.index, self.stock_hist.Low, self.stock_hist.High, lw=1, color="black")
+
+        subplot_1.vlines(up_df.index, up_df.Open, up_df.Close, lw=10, color="green")
+
+        subplot_1.vlines(down_df.index, down_df.Close, down_df.Open, lw=10, color="red")
+
+        subplot_1.plot(x, y)
+
+        x = self.earnings["Date"]
+        y = self.earnings["Close"]
+        up_df = self.stock_hist[self.stock_hist.Close > self.stock_hist.Open].copy()
+        down_df = self.stock_hist[self.stock_hist.Close < self.stock_hist.Open].copy()
+
+        vl1 = subplot_1.vlines(x, self.earnings["Low"], self.earnings["High"], lw=1, color="black")
+        vl2 = subplot_1.vlines(x, self.earnings["Open"], self.earnings["Close"], lw=10, color="green")
+        datacursor(vl1)
+   
+
+        vl1 = subplot_1.vlines(self.earnings["Date"], self.earnings["Low"], self.earnings["High"], lw=1, color="black")
+
+        vl2 = subplot_1.vlines(self.earnings["Date"], self.earnings["Open"], self.earnings["Close"], lw=10, color="green")
+
+        datacursor(vl1)
+        
+        if len(self.earnings["Date"]) > 8:
+            y_min = min(self.earnings["Low"][-8:])
+            y_max = max(self.earnings["High"][-8:])
+
+            subplot_1.axis([self.earnings["Date"][-10]-timedelta(days=30), self.earnings["Date"][-1]+timedelta(days=30), y_min*1.2, y_max*1.2])
+            subplot_1.set_xlim(self.earnings["Date"][-8]-timedelta(days=30), self.earnings["Date"][-1]+timedelta(days=30))
+            subplot_1.set_ylim(y_min*0.9, y_max*1.1)
+
+        
+
+        subplot_1.plot(x, y)
+
+
+        canvas = FigureCanvasTkAgg(fig, self.graph_frame_tl)
+        canvas.draw()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        toolbar = NavigationToolbar2Tk(canvas, self.graph_frame_tl)
+        toolbar.update()
+        canvas._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    def tr_graph(self):        
+        fig = Figure(figsize=(10,10), dpi=100, frameon=False)
+        subplot_1 = fig.add_subplot()
+        subplot_1.set_frame_on(False)
+        subplot_1.xaxis.set_major_formatter('${x:1.0f}')
+        
+
+        
+        subplot_1.plot([1,2,3,4,5,6,7,8], [1/1, 1/2, 1/3, 1/4, 1/5, 1/6, 1/7, 1/8])
+
+        x = [405.73, 415.5, 415.86, 420.82]
+        x = [self.stock_info["fiftyTwoWeekLow"], self.stock_info["dayLow"], self.stock_info["currentPrice"], self.stock_info["dayHigh"], self.stock_info["fiftyTwoWeekHigh"]]
+
+        for i in range(0, len(x)):
+            x[i] = float(x[i].replace("$",""))
+
+        print(x)
+
+        subplot_1.boxplot(x, vert=False, whis=(0, 100))
+
+        canvas = FigureCanvasTkAgg(fig, self.graph_frame_tr)
+        canvas.draw()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        toolbar = NavigationToolbar2Tk(canvas, self.graph_frame_tr)
+        toolbar.update()
+        canvas._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+    def bl_graph(self):        
+        fig = Figure(figsize=(10,5), dpi=50)
+        subplot_1 = fig.add_subplot()
+        subplot_1.plot([1,2,3,4,5,6,7,8], [1,2,3,4,5,6,7,8])
+
+        canvas = FigureCanvasTkAgg(fig, self.graph_frame_bl)
+        canvas.draw()
+        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        toolbar = NavigationToolbar2Tk(canvas, self.graph_frame_bl)
+        toolbar.update()
+        canvas._tkcanvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)        
+
+        colors = ['#4dab6d', "#72c66e", "#c1da64", "#f6ee54", "#fabd57", "#f36d54", "#ee4d55"]
+        colors = ['#00FF00', "#FFFF00", "#FF0000"]
+        values = [100,80,60,40,20,0,-20, -40]
+        x_axis_vals = [0, 0.44, 0.88,1.32,1.76,2.2,2.64]
+
+        # use degrees(for our convinience) and radians (for matplotlib)
+        x_axis_vals_deg = [0,60,120]
+        x_axis_vals_rad = []
+
+        for i in x_axis_vals_deg:
+            x_axis_vals_rad.append(np.deg2rad(i))
+
+        ax = fig.add_subplot(projection="polar")
+
+        ax.bar(x=x_axis_vals_rad, width=1.05, height=0.5, bottom=2,
+            linewidth=3, edgecolor="white",
+            color=colors, align="edge")
+        
+        pointer_x_vals = [150, 90, 30]
+
+        market_cap = self.stock_info["marketCap"]
+        market_cap = market_cap.replace("$","")
+        cap = None # 0 for small cap, 1 for mid cap, 2 for large cap
+        # check market cap
+        if market_cap[-1] == "T":
+            cap = 2
+        elif market_cap[-1] == "B":
+            if int(market_cap[:-1]) > 10:
+                cap = 2
+            else:
+                cap = 1
+        elif market_cap[-1] == "M":
+            if int(market_cap[:-1]) > 300:
+                cap = 1
+            else:
+                cap = 0
+        else:
+            cap = 0
+
+        ax.bar(x=[0, 0.44, 0.88,1.32,1.76,2.2,2.64], width=0.5, height=0.5, bottom=2,
+             linewidth=3, edgecolor="white",
+             color=colors, align="edge")
+
+        for loc, val in zip([0, 0.44, 0.88,1.32,1.76,2.2,2.64, 3.14], values):
+            ax.annotate(val, xy=(loc, 2.5), ha="right" if val<=20 else "left");
+
+            ax.annotate(" ", xytext=(0,0), xy=(np.deg2rad(pointer_x_vals[cap]),1.8),
+                    arrowprops=dict(arrowstyle="wedge, tail_width=0.5", color="black", shrinkA=0),
+                    bbox=dict(boxstyle="circle", facecolor="black", linewidth=1.5, ),
+                    fontsize=12, color="white", ha="center"
+                    )
+
+            ax.set_axis_off()
+
+            canvas = FigureCanvasTkAgg(fig, self.graph_frame_bl)
+            canvas.draw()
+            canvas.get_tk_widget().pack()#pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+            
+            canvas._tkcanvas.pack()#pack(side=tk.TOP, fill=tk.BOTH, expand=True)  
+
+    def data_br_ui(self):
+        self.scrollable_frame_parent = ScrollableFrame(self.data_br)
+
+        if self.stock_info["country"] != "United States":
+            messagebox.showinfo("Country", f"Country is {self.stock_info['country']}")
+
+        keys = [key for key in self.stock_info]
+        for i in range(0, len(keys)):
+            tk.Label(self.scrollable_frame_parent.scrollable_frame, text=keys[i]).pack(side=tk.TOP)
+            tk.Label(self.scrollable_frame_parent.scrollable_frame, text=self.stock_info[keys[i]]).pack()
+
+
+        self.scrollable_frame_parent.pack(fill=tk.BOTH, expand=True)
+
+    def show_stock_info(self):
+        # destroy the frames which show charts and data and create them again (to reset)
+        self.graph_frame_tl.destroy()
+        self.graph_frame_tr.destroy()
+        self.graph_frame_bl.destroy()
+        self.data_br.destroy()
+        self.setup_frames()
+
+        ticker = self.ticker_entry_var.get().upper()
+        self.ticker_label.config(text=ticker)
+
+        self.ticker_entry_var.set("")
+        if ticker:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                filtered_info = self.filter_info(info)
+                self.stock_info = {}
+
+                time_period = "max"
+                self.stock_hist = stock.history(period=time_period)
+                # self.info_text.delete(1.0, tk.END)  # Clear existing info before displaying new
+                self.display_info(filtered_info)
+                margin_info = self.calculate_margin(float(filtered_info.get('dayLow', '0').replace('$', '').replace(',', '')))
+                self.display_margin_info(margin_info)  # Display at the end
+                
+                self.get_and_display_earnings_dates(ticker)
+                
+                # print(self.stock_hist.index.strftime('%d/%m/%Y'))
+                self.earnings = {
+                    "Date":[], "Open": [], "High":[], "Low":[], "Close":[], "Volume":[], "Dividends":[], "Stock Splits":[]
+                }
+
+                # get just the earning dates
+                for index, row in self.stock_hist.iterrows():
+                    if index.strftime('%m/%d/%Y') in self.dates:# and int(index.strftime('%m/%d/%Y')[-4:]) > 2015:
+                        # print(str(index.strftime('%d/%m/%Y')))
+                        self.earnings["Date"].append(index)
+                        self.earnings["Open"].append(row.iloc[0])
+                        self.earnings["High"].append(row.iloc[1])
+                        self.earnings["Low"].append(row.iloc[2])
+                        self.earnings["Close"].append(row.iloc[3])
+                        self.earnings["Volume"].append(row.iloc[4])
+                        self.earnings["Dividends"].append(row.iloc[5])
+                        self.earnings["Stock Splits"].append(row.iloc[6])
+
+                
+                self.tr_graph()
+                self.tl_graph()
+                self.data_br_ui()
+                self.bl_graph()
+
+                print(len(self.earnings["Date"]))
+                
+                # print(self.dates)
+
+
+            except Exception as e:
+                messagebox.showerror("Error!", f"Error fetching data: str{e}")
+                # self.info_text.insert(tk.END, f"Error fetching data: {str(e)}")
+
+    def filter_info(self, info):
+        # Keep only the desired keys and format values
+        desired_keys = ["country", "overallRisk", "dayLow", "dayHigh", "exDividendDate",
+                        "averageVolume", "averageVolume10days", "marketCap", "fiftyTwoWeekLow", "fiftyTwoWeekHigh",
+                        "fiftyDayAverage", "twoHundredDayAverage", "floatShares", "sharesOutstanding", "sharesShort",
+                        "sharesShortPriorMonth", "sharesShortPreviousMonthDate", "dateShortInterest",
+                        "sharesPercentSharesOut", "heldPercentInsiders", "heldPercentInstitutions", "shortRatio",
+                        "shortPercentOfFloat", "52WeekChange", "lastDividendValue", "lastDividendDate", "currentPrice", "targetHighPrice", "targetLowPrice"]
+        filtered_info = {key: self.format_value(key, value) for key, value in info.items() if key in desired_keys}
+        return filtered_info
+
+    def format_value(self, key, value):
+        if key == "marketCap":
+            return self.format_market_cap(value)
+        elif key == "exDividendDate" or key == "lastDividendDate":
+            return datetime.fromtimestamp(value).strftime("%m/%d/%Y") if value else ""
+        elif key in ["dayLow", "dayHigh", "fiftyTwoWeekLow", "fiftyTwoWeekHigh",
+                     "fiftyDayAverage", "twoHundredDayAverage", "lastDividendValue", "currentPrice",
+                     "targetHighPrice", "targetLowPrice"]:
+            return f"${value:.2f}"  # Add dollar sign and format with two decimals
+        elif key in ["averageVolume", "averageVolume10days", "floatShares", "sharesOutstanding", "sharesShort",
+                     "sharesShortPriorMonth", "impliedSharesOutstanding"]:
+            return f"{value:,.0f}"  # Add comma for thousands separator
+        elif key in ["heldPercentInsiders", "heldPercentInstitutions", "shortRatio", "shortPercentOfFloat",
+                     "sharesPercentSharesOut", "52WeekChange"]:
+            return f"{value:.2f}%"  # Add percentage sign and format with two decimals
+        else:
+            return value
+
+    def format_market_cap(self, market_cap):
+        if market_cap >= 10**12:
+            return f"${market_cap / 10**12:.0f}T"
+        elif market_cap >= 10**9:
+            return f"${market_cap / 10**9:.0f}B"
+        elif market_cap >= 10**6:
+            return f"${market_cap / 10**6:.0f}M"
+        else:
+            return f"${market_cap:.0f}"
+
+    def display_info(self, info):
+        # Ensure consistent alignment
+        max_key_length = max(len(key) for key in info.keys()) + 1
+        for key, value in info.items():
+            formatted_key = key.ljust(max_key_length)
+            # self.info_text.insert(tk.END, f"{formatted_key}: {value}\n")
+            self.stock_info[formatted_key.rstrip()] = value
+
+    def calculate_margin(self, lowest_price):
+        if lowest_price > 16.67:
+            margin_percentage = 30
+            margin_amount = (2000 * margin_percentage) / 100
+        elif lowest_price > 5:
+            margin_percentage = (((2000 / lowest_price) * 5) / 2000) * 100
+            margin_amount = (2000 / lowest_price) * 5
+        elif lowest_price >= 2.5:
+            margin_percentage = 100
+            margin_amount = (2000 * margin_percentage) / 100
+        else:
+            margin_percentage = (((2000 / lowest_price) * 2.5) / 2000) * 100
+            margin_amount = (2000 * margin_percentage) / 100
+
+        # Calculate the short margin percentage with two digits after the decimal point
+        short_margin_percentage = "{:.2f}%".format(margin_percentage)
+
+        # Round the margin amount to the nearest whole dollar
+        margin_amount = round(margin_amount)
+
+        # Set the short margin value to display in the GUI
+        short_margin = f"{short_margin_percentage} (${margin_amount})"
+
+        return short_margin
+
+    def display_margin_info(self, margin_info):
+        # This method is correctly placed and should now display the margin info without overwriting other data.
+        max_key_length = max(len(key) for key in {"Short Margin Requirement": margin_info}.keys()) + 1
+        formatted_key = "Short Margin Requirement:".ljust(max_key_length)
+        # self.info_text.insert(tk.END, f"{formatted_key} {margin_info}\n")
+        self.stock_info[formatted_key] = margin_info
+
+    def get_and_display_earnings_dates(self, ticker):
+        url = f'https://www.sec.gov/cgi-bin/browse-edgar?type=10-&dateb=&owner=include&count=100&action=getcompany&CIK={ticker}'
+        headerInfo = {'User-Agent': 'Mozilla/5.0'}
+        try:
+            response = requests.get(url, headers=headerInfo)
+            if response.status_code == 200:
+                soup = bs4.BeautifulSoup(response.text, 'html.parser')
+                trElems = soup.select('tr')
+                dateFind = re.compile(r'2\d{3}-\d{2}-\d{2}')
+                dates = []
+
+                for tr in trElems:
+                    tdElems = tr.select('td')
+                    if len(tdElems) >= 5 and dateFind.search(tdElems[3].getText()) != None:
+                        date = tdElems[3].getText()
+                        converted = datetime.strptime(date, '%Y-%m-%d').strftime('%m/%d/%Y')
+                        dates.append(converted)
+                if dates:
+                    self.dates = dates
+                    return
+                else:
+                    messagebox.showinfo("No dates", "No earnings dates found")
+            else:
+                messagebox.showerror("Error!", "Can't retrieve dates at this moment")
+        except requests.exceptions.RequestException as e:
+            self.info_text.insert(tk.END, f"Failed to retrieve earnings dates: {e}\n")
+        
+
+
+main = Main()
+
+
